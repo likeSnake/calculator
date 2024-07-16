@@ -1,0 +1,1242 @@
+package com.zzw.zss.j_tools.ui;
+
+import static com.zzw.zss.a_community.utils.NumberToChinese.convertToChinese;
+
+import android.os.Bundle;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.text.InputFilter;
+import android.text.Spanned;
+import android.text.TextUtils;
+import android.view.View;
+import android.view.ViewTreeObserver;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.TextView;
+
+import androidx.annotation.Nullable;
+
+import com.zzw.zss.R;
+import com.zzw.zss.a_community.base.BaseActivity;
+import com.zzw.zss.a_community.utils.CalculateHistoryDialog;
+import com.zzw.zss.a_community.utils.RxToast;
+import com.zzw.zss.a_community.utils.TestInfo;
+import com.zzw.zss.a_community.utils.ToChineseDialog;
+import com.zzw.zss.a_community.view.SpinnImage.IMspinnerListView;
+import com.zzw.zss.j_tools.db.ToolDao;
+import com.zzw.zss.j_tools.entity.CalculateHistoryData;
+import com.zzw.zss.j_tools.view.CalculateEditText;
+
+import java.math.BigDecimal;
+import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Stack;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import butterknife.BindView;
+import butterknife.OnClick;
+
+/**
+ * 作者: jiang
+ *
+ * @date: 2024/7/5
+ */
+public class ScientificCalculatorActivity extends BaseActivity implements CalculateEditText.OnPasteListener {
+    private ToChineseDialog toChineseDialog;
+    private CalculateHistoryDialog calculateHistoryDialog;
+    private ToolDao toolDao;
+    private Boolean isAngle = false;
+    private String fmat_calculateResult;
+    private List<String> valueList = new ArrayList<>();
+    private Double calculateResult;
+    private boolean isTrigonometricFunction = false;
+    private int nowPosition;
+
+    @Override
+    public int getLayoutId() {
+        return R.layout.activity_sci_calculator_tool;
+    }
+
+    @Override
+    public void initView() {
+        // 输入框获取焦点但不弹出软键盘
+        calculatorStrEdit.setShowSoftInputOnFocus(false);
+        calculatorStrEdit.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                InputMethodManager imm = (InputMethodManager) getSystemService(getApplicationContext().INPUT_METHOD_SERVICE);
+                imm.hideSoftInputFromWindow(calculatorStrEdit.getWindowToken(), 0);
+
+            }
+        });
+        //设置过滤器，过滤中文
+        setMyInputFilter();
+        //获取焦点
+        calculatorStrEdit.requestFocus();
+        calculatorStrEdit.setSelection(0);
+        topTitleTV.setText("科学计算器");
+        //粘贴监听
+        calculatorStrEdit.setOnPasteListener(this);
+
+    }
+    @BindView(R.id.calculatorStrEdit)
+    CalculateEditText calculatorStrEdit;         // 数据输入框
+    @BindView(R.id.calculatorDataText)
+    TextView calculatorDataText;        // 结果显示
+    @BindView(R.id.topTitleTV)
+    TextView topTitleTV;
+    @BindView(R.id.calculatorSqrt)
+    Button calculatorSqrt;
+    @BindView(R.id.calculatorRem)
+    Button calculatorRem;
+    @BindView(R.id.calculatorReci)
+    Button calculatorReci;
+    @BindView(R.id.calculatorAngle)
+    Button calculatorAngle;
+    @BindView(R.id.topMoreWork)
+    IMspinnerListView topMoreWork;
+
+    @Override
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        initData();
+    }
+    public void initData(){
+        // 更多操作配置
+        topMoreWork.setIsChangeImage(false);
+        topMoreWork.setItemsData(new String[]{"使用指南"});
+        topMoreWork.setOnConfirmClickListener(new IMspinnerListView.onConfirmClickCallback() {
+            @Override
+            public void onConfirm(String str) {
+                if (str.equals("使用指南")) {
+                   // goToHelp(ScientificCalculatorActivity.this, TestInfo.URL_JYZF);
+                }
+            }
+        });
+    }
+
+    @OnClick({R.id.calculatorBig, R.id.calculatorAngle, R.id.calculatorCE, R.id.calculatorDelete,
+            R.id.calculatorSin, R.id.calculatorCos, R.id.calculatorTan,R.id.calculatorSqrt,
+            R.id.calculatorAsin, R.id.calculatorAcos, R.id.calculatorAtan, R.id.calculatorLg, R.id.calculatorLn,
+            R.id.calculatorPai, R.id.calculatorRem, R.id.calculatorReci, R.id.calculatorBracketF, R.id.calculatorBracketB,
+            R.id.calculator7, R.id.calculator8, R.id.calculator9, R.id.calculatorDivide,
+            R.id.calculator4, R.id.calculator5, R.id.calculator6, R.id.calculatorMultiply,
+            R.id.calculator1, R.id.calculator2, R.id.calculator3, R.id.calculatorSubtract,
+            R.id.calculator0, R.id.calculatorPoint, R.id.calculatorEqual, R.id.calculatorAdd,R.id.calculatorHistory,R.id.topBackIV})
+    public void setMyListener(View view) {
+        //控件点击震动反馈
+        clickVibration();
+        switch (view.getId()) {
+            case R.id.topBackIV:
+                onClickBack();
+                break;
+            case R.id.calculatorBig:
+                // 大写繁体转换
+                if (calculateResult!=null){
+                    if (!isAngle){
+                        if (getIntegerPartLength(calculateResult)>14){
+                            RxToast.MyToastError(getString(R.string.offside_cue));
+                        }else {
+                            String convertToChinese = convertToChinese(calculateResult);
+                            toChineseDialog = new ToChineseDialog(ScientificCalculatorActivity.this,convertToChinese);
+                            toChineseDialog.showDialog();
+                        }
+                    }else {
+                        RxToast.MyToastError(getString(R.string.angle_toChinese_remind));
+                    }
+
+                }
+                break;
+            case R.id.calculatorAngle:      // 角度计算
+                switchAngle();
+                break;
+            case R.id.calculatorHistory:      // 历史记录
+                shotHistory();
+                break;
+            case R.id.calculatorCE:         // 清空
+                clearAllData();
+                break;
+            case R.id.calculatorDelete:     // 回删
+                justAddStr("");
+                break;
+            case R.id.calculatorSin:
+                justAddStr("sin(");
+                break;
+            case R.id.calculatorCos:
+                justAddStr("cos(");
+                break;
+            case R.id.calculatorTan:
+                justAddStr("tan(");
+                break;
+            case R.id.calculatorSqrt:
+                if (isAngle){
+                    justAddStr("°");
+                }else {
+                    justAddStr("sqrt(");
+                }
+
+                break;
+            case R.id.calculatorAsin:
+                justAddStr("asin(");
+                break;
+            case R.id.calculatorAcos:
+                justAddStr("acos(");
+                break;
+            case R.id.calculatorAtan:
+                justAddStr("atan(");
+                break;
+            case R.id.calculatorLg:
+                justAddStr("lg(");
+                break;
+            case R.id.calculatorLn:
+                justAddStr("ln(");
+                break;
+            case R.id.calculatorPai:
+                justAddStr("π");
+                break;
+            case R.id.calculatorRem:
+                if (isAngle){
+                    justAddStr("'");
+                }else {
+                    justAddStr("%");
+                }
+                break;
+            case R.id.calculatorReci:
+                if (isAngle){
+                    justAddStr("\"");
+                }else {
+                    justAddStr("^(");
+                }
+                break;
+            case R.id.calculatorBracketF:
+                justAddStr("(");
+                break;
+            case R.id.calculatorBracketB:
+                justAddStr(")");
+                break;
+            case R.id.calculator7:
+                justAddStr("7");
+                break;
+            case R.id.calculator8:
+                justAddStr("8");
+                break;
+            case R.id.calculator9:
+                justAddStr("9");
+                break;
+            case R.id.calculatorDivide:     // 除
+                justAddStr("÷");
+                break;
+            case R.id.calculator4:
+                justAddStr("4");
+                break;
+            case R.id.calculator5:
+                justAddStr("5");
+                break;
+            case R.id.calculator6:
+                justAddStr("6");
+                break;
+            case R.id.calculatorMultiply:    // 乘
+                justAddStr("×");
+                break;
+            case R.id.calculator1:
+                justAddStr("1");
+                break;
+            case R.id.calculator2:
+                justAddStr("2");
+                break;
+            case R.id.calculator3:
+                justAddStr("3");
+                break;
+            case R.id.calculatorSubtract:   // 减
+                justAddStr("-");
+                break;
+            case R.id.calculator0:
+                justAddStr("0");
+                break;
+            case R.id.calculatorPoint:      // 小数点
+                justAddStr(".");
+                break;
+            case R.id.calculatorEqual:      // 等于
+                calculatorSubmit();
+                break;
+            case R.id.calculatorAdd:        // 加
+                justAddStr("+");
+                break;
+            default:
+                break;
+        }
+    }
+
+    public void switchAngle(){
+        if (isAngle) {
+            isAngle = false;
+            calculatorAngle.setText("角度");
+            calculatorSqrt.setBackgroundColor(getColor(R.color.light_gray));
+            calculatorRem.setBackgroundColor(getColor(R.color.light_gray));
+            calculatorReci.setBackgroundColor(getColor(R.color.light_gray));
+
+            calculatorSqrt.setText(getString(R.string.calculate_sqrt));
+            calculatorRem.setText(getString(R.string.calculate_percent));
+            calculatorReci.setText(getString(R.string.calculate_cube));
+            RxToast.MyToastCommon(getString(R.string.switch_conventional_mode_hint));
+            //对角度进行转换
+            String number_calculate = convertDMSExpression(calculatorStrEdit.getText().toString().trim());
+            calculatorStrEdit.setText(number_calculate);
+            calculatorStrEdit.setSelection(number_calculate.length());
+            //更新运算列表
+            updateCalculateList();
+
+            //清空输入
+            //clearAllData();
+
+        }else {
+            isAngle = true;
+            calculatorAngle.setText(getString(R.string.angle_mode_text));
+            calculatorSqrt.setBackgroundColor(getColor(R.color.baby_blue));
+            calculatorRem.setBackgroundColor(getColor(R.color.baby_blue));
+            calculatorReci.setBackgroundColor(getColor(R.color.baby_blue));
+
+            calculatorSqrt.setText(getString(R.string.calculate_angle));
+            calculatorRem.setText(getString(R.string.calculate_minute));
+            calculatorReci.setText(getString(R.string.calculate_second));
+
+            RxToast.MyToastCommon(getString(R.string.switch_angle_mode_hint));
+        }
+    }
+
+    //历史记录弹窗
+    public void shotHistory(){
+        if (calculateHistoryDialog==null) {
+            calculateHistoryDialog = new CalculateHistoryDialog(ScientificCalculatorActivity.this, new CalculateHistoryDialog.MainlineCommunication() {
+                @Override
+                public void ClickEvent(String calculateCourse) {
+                    historyDispose(calculateCourse);
+
+                }
+
+                @Override
+                public void LongClickEvent(String calculateResult) {
+                    historyDispose(calculateResult);
+                }
+            });
+        }
+        calculateHistoryDialog.showDialog();
+        calculateHistoryDialog.refreshData();
+
+    }
+
+    public void historyDispose(String data){
+        valueList.clear();
+        String[] changeStr = data.split("");
+        valueList.addAll(Arrays.asList(changeStr));
+        calculatorStrEdit.setText(data);
+        int length = calculatorStrEdit.getText().length();
+        calculatorStrEdit.setSelection(length);
+        calculatorDataText.setText("");
+    }
+    // 按钮添加
+    private void justAddStr(String addStr) {
+        nowPosition = calculatorStrEdit.getSelectionEnd();
+        //回删
+        if (TextUtils.isEmpty(addStr)) {
+            if (nowPosition == 0) {
+                // 已清空
+                return;
+            }
+            //回删处理
+            nowPosition = calculateDelete();
+
+
+        } else {
+            //如果是角度，优先检测角度输入格式
+            if (isAngle){
+                if (!angleInoutCheckout(addStr)){
+                    return;
+                }
+            }
+            //处理光标位置
+            char[] charArray = addStr.toCharArray();
+            for (char c : charArray) {
+                valueList.add(nowPosition, String.valueOf(c));
+                nowPosition++;
+            }
+
+           
+        }
+
+        StringBuilder allStr = new StringBuilder();
+        for (String str : valueList) {
+            allStr.append(str);
+        }
+        calculatorStrEdit.setText(allStr);
+        calculatorStrEdit.setSelection(nowPosition);
+    }
+
+    // 运算对照表：
+    // 不需要更换：1234567890.()^eπ+-×÷!    次方，Math.E，Math.PI，加减乘除，阶乘
+    // 需要转换符：sin-s,cos-c,tan-t,asin-q,acos-a,atan-z,sqrt-r,lg-g,ln-n   :lg表示10为底的对数，ln表示以e为底的对数；
+    // 需要转换符：%-×0.01,取余-%,
+    // 提交计算
+    private void calculatorSubmit() {
+        // 原始字符串
+        String inputStr = calculatorStrEdit.getText().toString();
+        //默认为非三角函数计算
+        isTrigonometricFunction = false;
+        //提前对%的格式进行处理
+        if (!percentFormat(inputStr))return;
+
+        // 对原始计算符号进行替换处理
+        inputStr = inputStr
+                .replace("asin", "q")
+                .replace("acos", "a")
+                .replace("atan", "z")
+                .replace("sin", "s")
+                .replace("cos", "c")
+                .replace("tan", "t")
+                .replace("sqrt", "r")
+                .replace("lg", "g")
+                .replace("ln", "n")
+                .replace("%", "×0.01");
+
+        //单独处理负号
+        inputStr = disposeMinus(inputStr);
+        //如果时角度计算
+        if (isAngle) {
+            //对度分秒进行转换
+            inputStr = convertDMSExpression(inputStr);
+        }
+        // 判断原始字符是否输入非法
+        boolean b = checkInputStr(inputStr);
+        if (!b) return;
+        zhanDui(inputStr);
+    }
+
+    /*角度值输入格式初步判断*/
+    public boolean angleInoutCheckout(String addStr){
+        //输入只要不为度分秒，直接放行
+        if (!"'\"°".contains(addStr)){
+            return true;
+        }
+        if (nowPosition==0){
+            return false;
+        }
+        //输入为度分秒，前一位必须为数字
+        if ("0123456789".contains(valueList.get(nowPosition-1))){
+            return true;
+        }else {
+            return false;
+        }
+    }
+
+    //单独判断%
+    public boolean percentFormat(String str){
+        for (int i = 0; i < str.length() - 1; i++) {
+            //"％"后面只能跟运算符和角度
+            if ("%".equals(String.valueOf(str.charAt(i))) && "+-×÷.!^)°'\"".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError("运算格式错误,％后只能是运算符");
+                return false;
+            }
+        }
+        return true;
+    }
+    //更新运算列表
+    public void updateCalculateList(){
+        valueList.clear();
+        nowPosition = 0;
+        String updateEdit = calculatorStrEdit.getText().toString().trim();
+
+        char[] charArray = updateEdit.toCharArray();
+        for (char c : charArray) {
+            valueList.add(nowPosition, String.valueOf(c));
+            nowPosition++;
+        }
+    }
+
+    //处理粘贴的运算
+    @Override
+    public void onTextPasted(String pastedText) {
+        nowPosition = calculatorStrEdit.getSelectionEnd();
+        char[] charArray = pastedText.toCharArray();
+        for (char c : charArray) {
+            valueList.add(nowPosition, String.valueOf(c));
+            nowPosition++;
+        }
+    }
+
+    /****************************************************************************************
+     * 功能：逻辑判断及计算部分
+     * 参数：
+     * 返回值：
+     ****************************************************************************************/
+
+    // 判断输入是否错误
+    public boolean checkInputStr(String str) {
+        if (TextUtils.isEmpty(str)) {
+            RxToast.MyToastError("输入为空");
+            return false;
+        }
+        if (str.length() == 1) {
+            //当只有一位字符时，只能是“0123456789eπ”中的一个
+            if ("0123456789eπ".indexOf(str.charAt(0)) == -1) {
+                RxToast.MyToastError("当前输入不能进行计算");
+                return false;
+            }
+        }
+        for (int i = 0; i < str.length() - 1; i++) {
+            //1.第一个字符只能为"losctg(0123456789ep"中的一个
+            if ("-sctqazrgn(0123456789eπ".indexOf(str.charAt(0)) == -1) {
+                RxToast.MyToastError("第一个字符输入错误");
+                return false;
+            }
+            //2.“+-×÷”后面只能是"0123456789losctga(ep"中的一个
+            if ("+-×÷".indexOf(str.charAt(i)) >= 0 && "sctqazrgn(0123456789eπ".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError("加减乘除后面的输入错误");
+                return false;
+            }
+            //3."."后面只能是“0123456789”中的一个
+            if (str.charAt(i) == '.' && "0123456789".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError("小数点后面只能是数字");
+                return false;
+            }
+            //4."!"后面只能是“+-×÷^)”中的一个
+            boolean isNextCalculate = "+-×÷^)".indexOf(str.charAt(i + 1)) == -1;
+            if (str.charAt(i) == '!' && isNextCalculate) {
+                RxToast.MyToastError("非运算符！后面只能是加减乘除或者次方");
+                return false;
+            }
+            //5."losctga"后面只能是“0123456789(ep”中的一个
+            if ("sctqazrgn".indexOf(str.charAt(i)) >= 0 && "0123456789(eπ".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError("输入错误，比如：三角函数后只能跟数字、（、π等");
+                return false;
+            }
+            //6."0"的判断操作
+            if (str.charAt(0) == '0' && str.charAt(1) == '0') {
+                RxToast.MyToastError("输入错误，不能有连续0");
+                return false;
+            }
+
+            if (i >= 1 && str.charAt(i) == '0') {
+                int n = i;
+                int is = 0;
+                //1.当0的上一个字符不为"0123456789."时，后一位只能是“+-×÷.!^)”中的一个
+                if ("0123456789.".indexOf(str.charAt(i - 1)) == -1 && "+-×÷.!^)".indexOf(str.charAt(i + 1)) == -1) {
+                    RxToast.MyToastError("输入错误，当0的上一个字符不为0123456789.时，后一位只能是+-×÷.!^)中的一个");
+                    return false;
+                }
+                //2.如果0的上一位为“.”,则后一位只能是“0123456789+-×÷.^)”中的一个
+                boolean isNextCalculate2 = "0123456789+-×÷.^)".indexOf(str.charAt(i + 1)) == -1;
+                if (str.charAt(i - 1) == '.' && isNextCalculate2) {
+                    RxToast.MyToastError("如果0的上一位为.,则后一位只能是0123456789+-×÷.^)中的一个");
+                    return false;
+                }
+                n -= 1;
+                while (n > 0) {
+                    if ("(+-×÷^sctqazrgn".indexOf(str.charAt(n)) >= 0) {
+                        break;
+                    }
+                    if (str.charAt(n) == '.') {
+                        is++;
+                    }
+                    n--;
+                }
+
+                //3.如果0到上一个运算符之间没有“.”的话，整数位第一个只能是“123456789”，
+                //  且后一位只能是“0123456789+-×÷.!^)”中的一个。
+                if ((is == 0 && str.charAt(n) == '0') || "0123456789+-×÷.!^)".indexOf(str.charAt(i + 1)) == -1) {
+                    RxToast.MyToastError("如果0到上一个运算符之间没有.，则整数位第一个只能是123456789，而且一位只能是0123456789+-×÷.!^)中的一个");
+                    return false;
+                }
+                //4.如果0到上一个运算符之间有一个“.”的话,则后一位只能是“0123456789+-×÷.^)”中的一个
+                if (is == 1 && isNextCalculate2) {
+                    RxToast.MyToastError("如果0到上一个运算符之间有一个.的话,则后一位只能是0123456789+-×÷.^)中的一个");
+                    return false;
+                }
+                if (is > 1) {
+                    RxToast.MyToastError("输入错误");
+                    return false;
+                }
+
+            }
+            //7."123456789"后面只能是“0123456789+-×÷.!^)”中的一个
+            if ("123456789".indexOf(str.charAt(i)) >= 0 && "0123456789+-×÷.!^)°'\"".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError("123456789后面只能是0123456789+-×÷.!^)°'\"中的一个");
+                return false;
+            }
+            //8."("后面只能是“-0123456789locstg()ep”中的一个
+            if (str.charAt(i) == '(' && "-sctqazrgn0123456789()eπ".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError("(后面的数字或公式输入非法");
+                return false;
+            }
+            if ("sctqaz".indexOf(str.charAt(i))!=-1){
+                isTrigonometricFunction = true;
+            }
+            //9.")"后面只能是“+-×÷!^)”中的一个
+            if (str.charAt(i) == ')' && "+-×÷!^)".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError(")后面只能是+-×÷!^)中的一个");
+                return false;
+            }
+            //10.最后一位字符只能是“0123456789!)eπ°'"”中的一个
+            if ("0123456789!)eπ°'\"".indexOf(str.charAt(str.length() - 1)) == -1) {
+                RxToast.MyToastError("最后一位字符只能是0123456789!)eπ°'\"中的一个");
+                return false;
+            }
+            //11.不能有多个“.”
+            if (i > 2 && str.charAt(i) == '.') {
+                int n = i - 1;
+                int is = 0;
+                while (n > 0) {
+                    if ("(+-×÷^sctqazrgn".indexOf(str.charAt(n)) >= 0) {
+                        break;
+                    }
+                    if (str.charAt(n) == '.') {
+                        is++;
+                    }
+                    n--;
+                }
+                if (is > 0) {
+                    if (isAngle){
+                        RxToast.MyToastError("角度值格式错误");
+                    }else {
+                        RxToast.MyToastError("不能有连续的.");
+                    }
+                    return false;
+                }
+            }
+            //12."eπ"后面只能是“+-×÷^)”中的一个
+            if ("eπ".indexOf(str.charAt(i)) >= 0 && isNextCalculate) {
+                RxToast.MyToastError("e、π后面只能是+-×÷^)中的一个");
+                return false;
+            }
+
+            //13."度分秒"格式判断
+            if ("'\"。".indexOf(str.charAt(i)) >= 0 && "+-×÷.!^".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError("度分秒格式不正确，度分秒后一位只能是+-×÷.!^中的一个");
+                return false;
+            }
+
+            //14."平方根"格式判断
+            /*if ("r".indexOf(str.charAt(i)) > 0 && "－".indexOf(str.charAt(i + 1)) == -1) {
+                RxToast.MyToastError("度分秒格式不正确，度分秒后一位只能是+-×÷.!^中的一个");
+                return false;
+            }*/
+
+        }
+
+        return true;
+    }
+    // 进行计算，并且判断括号是否匹配
+    public void zhanDui(String str) {
+        String khao = "";
+        int leftkh = 0;
+        int rightkh = 0;
+        int m = 0;
+
+        //判断括号是否成对
+        for (int i = 0; i < str.length(); i++) {
+            if (str.charAt(i) == '(') {
+                khao += '(';
+                leftkh++;
+            }
+            if (str.charAt(i) == ')') {
+                khao += ')';
+                rightkh++;
+            }
+        }
+        if (leftkh != rightkh) {
+            RxToast.MyToastError("输入错误，括号没有成对");
+            return;
+        }
+        if (leftkh == 0 || leftkh > 0 && khao.charAt(0) == '(' && khao.charAt(khao.length() - 1) == ')') {
+            List<String> list1 = infixExpression(str);
+        //    List<String> strings = reverseDivision(list1);
+            List<String> list2 = suffixExpression(list1);
+
+            calculateResult = calculateBySuffix(list2);
+            if (calculateResult == TestInfo.ERROR_MEASURE_One) {
+                calculatorDataText.setText("结果：计算失败");
+            } else {
+                if (isAngle){
+                    if (!isTrigonometricFunction){
+                        fmat_calculateResult = convertToDMS(calculateResult);
+                    }else {
+                        //对科学计数法进行14位保留
+                        fmat_calculateResult = formatMyNumber(calculateResult,14);
+                    }
+                }else {
+                    //对科学计数法进行14位保留
+                    fmat_calculateResult = formatMyNumber(calculateResult,14);
+                }
+
+                calculatorDataText.setText("结果：" + fmat_calculateResult);
+                saveThisCalculate();
+
+            }
+        } else {
+            RxToast.MyToastError("输入错误，括号没有成对");
+            return;
+        }
+    }
+
+    //过滤中文字符
+    public void setMyInputFilter(){
+        InputFilter filter = new InputFilter() {
+            @Override
+            public CharSequence filter(CharSequence source, int start, int end, Spanned dest, int dstart, int dend) {
+                for (int i = start; i < end; i++) {
+                    char character = source.charAt(i);
+                    if (isChinese(character)) {
+                        return "";
+                    }
+                }
+                return null;
+            }
+
+            private boolean isChinese(char character) {
+                Character.UnicodeBlock ub = Character.UnicodeBlock.of(character);
+                return ub == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                        || ub == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
+                        || ub == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                        || ub == Character.UnicodeBlock.GENERAL_PUNCTUATION
+                        || ub == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
+                        || ub == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS;
+            }
+        };
+
+        calculatorStrEdit.setFilters(new InputFilter[]{filter});
+    }
+
+
+    //处理负号
+    public String disposeMinus(String str){
+        StringBuilder result = new StringBuilder(str);
+
+        for (int i = 0; i < result.length(); i++) {
+            // 对负号进行单独变形处理
+            if ("-".equals(String.valueOf(result.charAt(i))) && (i==0 || "+-×÷(^".contains(String.valueOf(result.charAt(i - 1))))) {
+                int start = i;
+                // 在负号前面加上"(0"
+                result.insert(start, "(0");
+                i += 3; // 调整索引以跳过插入的字符
+
+                // 找到负号后面的数字（包括小数）
+                int j = i + 1;
+                while (j < result.length() && (Character.isDigit(result.charAt(j)) || result.charAt(j) == '.')) {
+                    j++;
+                }
+
+                // 在数字后面加上")"
+                result.insert(j, ")");
+                i = j; // 调整索引到插入的字符后面
+            }
+        }
+        return result.toString();
+    }
+
+    public void saveThisCalculate(){
+        if (toolDao==null){
+            toolDao = new ToolDao();
+        }
+        CalculateHistoryData calculateHistoryData = new CalculateHistoryData(fmat_calculateResult, calculatorStrEdit.getText().toString());
+        toolDao.saveCalculateRecord(calculateHistoryData);
+    }
+    // 把输入的字符串转换成中缀表达式，存入list中
+    private List<String> infixExpression(String str) {
+        int index = 0;
+        List<String> list = new ArrayList<>();
+        do {
+            char ch = str.charAt(index);
+            if ("+-×÷^!sctqazrgn()".indexOf(str.charAt(index)) >= 0) {
+                //是操作符，直接添加至list中
+                index++;
+                list.add(ch + "");
+            } else if (str.charAt(index) == 'e' || str.charAt(index) == 'p' || str.charAt(index) == 'π') {
+                index++;
+                list.add(ch + "");
+            } else if ("0123456789".indexOf(str.charAt(index)) >= 0) {
+                //是数字,判断多位数的情况
+                String str1 = "";
+                while (index < str.length() && "0123456789.".indexOf(str.charAt(index)) >= 0) {
+                    str1 += str.charAt(index);
+                    index++;
+                }
+                list.add(str1);
+
+            }
+        } while (index < str.length());
+        return list;
+    }
+
+    // 中缀表达式转换称后缀表达式
+    public List<String> suffixExpression(List<String> list) {
+        Stack<String> fuZhan = new Stack<>();
+        List<String> list2 = new ArrayList<>();
+        if (!list.isEmpty()) {
+            for (int i = 0; i < list.size(); i++) {
+                if (isNumber(list.get(i))) {
+                    list2.add(list.get(i));
+                } else if (list.get(i).charAt(0) == '(') {
+                    fuZhan.push(list.get(i));
+                } else if (isOperator(list.get(i)) && list.get(i).charAt(0) != '(') {
+                    if (fuZhan.isEmpty()) {
+                        fuZhan.push(list.get(i));
+                    } else {//符栈不为空
+                        if (list.get(i).charAt(0) != ')') {
+                            if (adv(fuZhan.peek()) < adv(list.get(i))) {
+                                //入栈
+                                fuZhan.push(list.get(i));
+                            } else {//出栈
+                                while (!fuZhan.isEmpty() && !"(".equals(fuZhan.peek())) {
+                                    if (adv(list.get(i)) <= adv(fuZhan.peek())) {
+                                        list2.add(fuZhan.pop());
+                                    }
+                                }
+                                if (fuZhan.isEmpty() || fuZhan.peek().charAt(0) == '(') {
+                                    fuZhan.push(list.get(i));
+                                }
+                            }
+                        } else if (list.get(i).charAt(0) == ')') {
+                            while (fuZhan.peek().charAt(0) != '(') {
+                                list2.add(fuZhan.pop());
+                            }
+                            fuZhan.pop();
+                        }
+                    }
+                }
+            }
+            while (!fuZhan.isEmpty()) {
+                list2.add(fuZhan.pop());
+            }
+        }
+        return list2;
+    }
+    //度分秒转换为正常值
+    public String convertDMSExpression(String expression) {
+        //对特殊的角度进行处理
+
+        // 正则表达式匹配度分秒格式
+        String dmsPattern = "(\\d+\\.\\d+°|\\d+°)?(\\d+\\.\\d+'|\\d+'|\"|″)?(\\d+\\.\\d+\"|\\d+\")?";
+
+        Pattern pattern = Pattern.compile(dmsPattern);
+        Matcher matcher = pattern.matcher(expression);
+
+        StringBuilder convertedExpression = new StringBuilder();
+        int lastEnd = 0;
+
+        while (matcher.find()) {
+            // 提取度、分和秒
+            double degrees = matcher.group(1) != null ? Double.parseDouble(matcher.group(1).replace("°", "")) : -1;
+            double minutes = matcher.group(2) != null ? Double.parseDouble(matcher.group(2).replace("'", "")) : -1;
+            double seconds = matcher.group(3) != null ? Double.parseDouble(matcher.group(3).replace("\"", "")) : -1;
+
+            // 构造转换后的表达式
+            convertedExpression.append(expression, lastEnd, matcher.start());
+            double totalDegrees = 0;
+            //匹配到角度值
+            if (degrees!=-1||minutes!=-1||seconds!=-1){
+                if (degrees!=-1){
+                    totalDegrees += degrees;
+                }
+
+                if(minutes!=-1){
+                    totalDegrees += minutes / 60.0;
+                }
+
+                if(seconds!=-1){
+                    totalDegrees = seconds / 3600.0;
+
+                }
+
+                convertedExpression.append(totalDegrees);
+            }
+
+            lastEnd = matcher.end();
+        }
+
+        // 处理表达式中剩余的部分
+        String substring = expression.substring(lastEnd);
+        convertedExpression.append(substring);
+
+        return convertedExpression.toString();
+    }
+
+    //将正常计算值转为度分秒格式
+    public String convertToDMS(double decimal) {
+        // 提取度
+        int degrees = (int) decimal;
+
+        // 提取分
+        double fractionalPart = decimal - degrees;
+        double minutesDecimal = fractionalPart * 60;
+        int minutes = (int) minutesDecimal;
+
+        // 提取秒
+        double secondsDecimal = (minutesDecimal - minutes) * 60;
+        double seconds = Math.round(secondsDecimal * 100) / 100.0; // 保留两位小数
+
+        // 处理秒数四舍五入后可能导致的溢出
+        if (seconds >= 60.0) {
+            seconds = 0.0;
+            minutes += 1;
+        }
+        if (minutes >= 60) {
+            minutes = 0;
+            degrees += 1;
+        }
+
+        // 构造角度值字符串
+        return degrees + "°" + minutes + "'" + seconds + "\"";
+    }
+
+
+    // //通过后缀表达式进行计算
+    public double calculateBySuffix(List<String> list2) {
+        int indexYN = 0;
+        Stack<String> stack = new Stack<>();
+        for (int i = 0; i < list2.size(); i++) {
+            if (isNumber(list2.get(i))) {
+                if (list2.get(i).charAt(0) == 'e') {
+                    stack.push(String.valueOf(Math.E));
+                } else if (list2.get(i).charAt(0) == 'π') {
+                    stack.push(String.valueOf(Math.PI));
+                } else {
+                    stack.push(list2.get(i));
+                }
+            } else if (isOperator(list2.get(i))) {
+                double res = 0;
+                if (list2.get(i).equals("+")) {
+                    double num2 = Double.parseDouble(stack.pop());
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = num1 + num2;
+                } else if (list2.get(i).equals("-")) {
+                    double num2 = Double.parseDouble(stack.pop());
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = num1 - num2;
+                } else if (list2.get(i).equals("×")) {
+                    double num2 = Double.parseDouble(stack.pop());
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = num1 * num2;
+                } else if (list2.get(i).equals("÷")) {
+
+
+                    double num2 = Double.parseDouble(stack.pop());
+                    double num1 = Double.parseDouble(stack.pop());
+                    if (num2 != 0) {
+                        res = num1 / num2;
+                    } else {
+                        RxToast.MyToastError("除数不能为0");
+                        indexYN = 1;
+                    }
+                } else if (list2.get(i).equals("^")) {
+                    double num2 = Double.parseDouble(stack.pop());
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = Math.pow(num1, num2);
+                } else if (list2.get(i).equals("!")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    if (num1 == 0 || num1 == 1) {
+                        res = 1;
+                    } else if (num1 == (int) num1 && num1 > 1) {
+                        int d = 1;
+                        for (int j = (int) num1; j > 0; j--) {
+                            d *= j;
+                        }
+                        res = d;
+                    } else {
+                        RxToast.MyToastError("阶乘必须为自然数");
+                        indexYN = 1;
+                    }
+                } else if (list2.get(i).equals("r")) {
+                    // 需要转换符：sin-s,cos-c,tan-t,asin-q,acos-a,atan-z,sqrt-r,lg-g,ln-n
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = Math.sqrt(Math.abs(num1));
+                } else if (list2.get(i).equals("n")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    if (num1 > 0) {
+                        res = Math.log(num1);
+                    } else {
+                        RxToast.MyToastError("ln的x必须大于0");
+                        indexYN = 1;
+                    }
+                } else if (list2.get(i).equals("g")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    if (num1 > 0) {
+                        res = Math.log(num1) / Math.log(2);
+                    } else {
+                        RxToast.MyToastError("lg的x必须大于0");
+                        indexYN = 1;
+                    }
+                } else if (list2.get(i).equals("s")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = Math.sin(Math.toRadians(num1));
+                } else if (list2.get(i).equals("c")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = Math.cos(Math.toRadians(num1));
+                } else if (list2.get(i).equals("t")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    if (Math.cos(Math.toRadians(num1)) != 0) {
+                        res = Math.tan(Math.toRadians(num1));
+                    } else {
+                        RxToast.MyToastError("tan的x不能为+-(π/2 + kπ)");
+                        indexYN = 1;
+                    }
+                } else if (list2.get(i).equals("q")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = Math.asin(Math.toRadians(num1));
+                } else if (list2.get(i).equals("a")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = Math.acos(Math.toRadians(num1));
+                } else if (list2.get(i).equals("z")) {
+                    double num1 = Double.parseDouble(stack.pop());
+                    res = Math.atan(Math.toRadians(num1));
+                }
+                stack.push("" + res);
+            }
+        }
+        if (indexYN == 0) {
+            if (!stack.isEmpty()) {
+                return Double.parseDouble(stack.pop());
+            } else {
+                return 0;
+            }
+        } else {
+            return TestInfo.ERROR_MEASURE_One;
+        }
+    }
+
+    //判断是否为操作符
+    public static boolean isOperator(String op) {
+        if ("0123456789.eπ".indexOf(op.charAt(0)) == -1) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    //判断是否为操作数
+    public static boolean isNumber(String num) {
+        if ("0123456789eπ".indexOf(num.charAt(0)) >= 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    //判断操作符的优先级
+    public static int adv(String f) {
+        int result = 0;
+        switch (f) {
+            case "+":
+            case "-":
+                result = 1;
+                break;
+            case "×":
+            case "÷":
+                result = 2;
+                break;
+            case "^":
+                result = 3;
+                break;
+            case "!":
+            case "l":
+            case "g":
+            case "n":
+            case "o":
+            case "s":
+            case "c":
+            case "t":
+            case "r":
+            case "z":
+            case "a":
+            case "q":
+                result = 4;
+                break;
+        }
+        return result;
+    }
+
+    public void clickVibration(){
+        Vibrator vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        if (vibrator != null) {
+            // 适用于API 26及以上
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                // 适用于API 26以下
+                vibrator.vibrate(30);
+            }
+        }
+    }
+    // 清除所有
+    private void clearAllData() {
+        calculateResult = null;
+        calculatorStrEdit.setText("");
+        calculatorDataText.setText("结果：");
+        valueList.clear();
+    }
+
+    /**
+     * 获取 double 类型数值中整数部分的长度（不包括负号和小数点）
+     * @param number 要检测的 double 类型数值
+     * @return 整数部分的长度
+     */
+    public int getIntegerPartLength(double number) {
+        // 将 double 转换为字符串
+        // 将科学计数法表示的数字还原为普通表示
+        BigDecimal bigDecimal = new BigDecimal(Double.toString(number));
+        String numberStr = bigDecimal.toPlainString();
+
+
+
+        // 去掉负号
+        if (numberStr.startsWith("-")) {
+            numberStr = numberStr.substring(1);
+        }
+
+        // 找到小数点的位置
+        int decimalPointIndex = numberStr.indexOf(".");
+
+        // 如果存在小数点，截取小数点之前的部分
+        if (decimalPointIndex != -1) {
+            numberStr = numberStr.substring(0, decimalPointIndex);
+        }
+
+        // 返回整数部分的长度
+        return numberStr.length();
+    }
+
+    public String formatMyNumber(double number, int threshold) {
+        // 将科学计数法表示的数字还原为普通表示
+        BigDecimal bigDecimal = new BigDecimal(Double.toString(number));
+        String plainString = bigDecimal.toPlainString();
+
+        // 判断数字整数部分的位数是否超过阈值
+        String[] parts = plainString.split("\\.");
+        int integerPartLength = parts[0].length();
+
+        if (integerPartLength > threshold) {
+            // 超过阈值，使用科学计数法
+            DecimalFormat scientificFormat = new DecimalFormat("0.###############E0");
+            return scientificFormat.format(number);
+        } else {
+            // 没有超过阈值，处理小数部分
+            if (parts.length > 1 && parts[1].length() > 15) {
+                // 四舍五入到15位小数
+                bigDecimal = bigDecimal.setScale(15, BigDecimal.ROUND_HALF_UP);
+            }
+
+            // 使用DecimalFormat格式化数字
+            DecimalFormat decimalFormat = new DecimalFormat();
+            decimalFormat.setMaximumFractionDigits(15);
+            decimalFormat.setGroupingUsed(false);
+            return decimalFormat.format(bigDecimal);
+        }
+    }
+
+    public String formatMyTest(double number, int threshold) {
+        // 将科学计数法表示的数字还原为普通表示
+        BigDecimal bigDecimal = new BigDecimal(Double.toString(number));
+        String plainString = bigDecimal.toPlainString();
+//数字整数部分的位数
+       /* int integerPartLength = plainString.contains(".") ? plainString.split("\\.")[0].length() : plainString.length();
+        if (integerPartLength>threshold){
+
+        }*/
+        // 判断数字的位数是否超过阈值
+        String pattern;
+        if (plainString.replace(".", "").length() > threshold) {
+            pattern = "0.###E0";
+        } else {
+            // 构建整数部分的模式
+            int integerPartLength = plainString.split("\\.")[0].length();
+            pattern = "0";
+            for (int i = 1; i < integerPartLength; i++) {
+                pattern = "#" + pattern;
+            }
+
+            // 构建小数部分的模式
+            if (plainString.contains(".")) {
+                pattern += ".";
+                int decimalPartLength = plainString.split("\\.")[1].length();
+                for (int i = 0; i < Math.min(decimalPartLength, 13); i++) {
+                    pattern += "#";
+                }
+            }
+        }
+
+        // 使用DecimalFormat格式化数字
+        DecimalFormat decimalFormat = new DecimalFormat(pattern);
+        return decimalFormat.format(number);
+    }
+
+    //回删方法
+    public int calculateDelete(){
+
+        if ("(".equals(valueList.get(nowPosition - 1))){
+            valueList.remove(nowPosition - 1);
+            nowPosition--;
+            if (nowPosition!=0) {
+                if ("n".equals(valueList.get(nowPosition - 1))) {
+                    valueList.remove(nowPosition - 1);
+                    nowPosition--;
+                    if ("lai".contains(valueList.get(nowPosition - 1))) {
+                        valueList.remove(nowPosition - 1);
+                        nowPosition--;
+                        if (nowPosition != 0) {
+                            if ("ts".contains(valueList.get(nowPosition - 1))) {
+                                valueList.remove(nowPosition - 1);
+                                nowPosition--;
+                                if (nowPosition != 0) {
+                                    if ("a".equals(valueList.get(nowPosition - 1))) {
+                                        valueList.remove(nowPosition - 1);
+                                        nowPosition--;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if ("s".equals(valueList.get(nowPosition - 1))) {
+                    valueList.remove(nowPosition - 1);
+                    nowPosition--;
+                    if ("o".equals(valueList.get(nowPosition - 1))) {
+                        valueList.remove(nowPosition - 1);
+                        nowPosition--;
+                        if ("c".equals(valueList.get(nowPosition - 1))) {
+                            valueList.remove(nowPosition - 1);
+                            nowPosition--;
+                            if (nowPosition != 0) {
+                                if ("a".equals(valueList.get(nowPosition - 1))) {
+                                    valueList.remove(nowPosition - 1);
+                                    nowPosition--;
+                                }
+                            }
+                        }
+                    }
+                } else if ("g".equals(valueList.get(nowPosition - 1))) {
+                    valueList.remove(nowPosition - 1);
+                    nowPosition--;
+                    valueList.remove(nowPosition - 1);
+                    nowPosition--;
+                } else if ("t".equals(valueList.get(nowPosition - 1))) {
+                    valueList.remove(nowPosition - 1);
+                    nowPosition--;
+                    valueList.remove(nowPosition - 1);
+                    nowPosition--;
+                    valueList.remove(nowPosition - 1);
+                    nowPosition--;
+                    valueList.remove(nowPosition - 1);
+                    nowPosition--;
+                }
+            }
+        }else {
+            valueList.remove(nowPosition - 1);
+            nowPosition--;
+        }
+
+
+        return nowPosition;
+    }
+
+}
